@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CanopyDiary">
+  <rect width="512" height="512" rx="112" fill="#07140f"/>
+  <path d="M384 119c-7 86-35 163-87 215-49 49-115 66-181 45-19-65-1-130 49-180 52-52 132-78 219-80Z" fill="#7fc66c"/>
+  <path d="M130 382c56-93 124-157 231-227" fill="none" stroke="#e7f8e8" stroke-width="34" stroke-linecap="round"/>
+  <path d="M184 332c42-8 79-24 113-48" fill="none" stroke="#225f3a" stroke-width="26" stroke-linecap="round"/>
+</svg>

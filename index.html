@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#07140f" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="robots" content="index, follow" />
+    <meta
+      name="description"
+      content="CanopyDiary is a quiet forest-inspired diary for dated notes, daily pictures, local saving, and optional Google cloud storage."
+    />
+    <meta property="og:title" content="CanopyDiary | Forest Night Diary" />
+    <meta
+      property="og:description"
+      content="A local-first diary for daily notes and pictures, wrapped in a calm night forest interface."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="assets/forest-canopy.webp" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="CanopyDiary | Forest Night Diary" />
+    <meta
+      name="twitter:description"
+      content="A local-first diary for daily notes and pictures, with optional Google cloud storage."
+    />
+    <meta name="twitter:image" content="assets/forest-canopy.webp" />
+    <title>CanopyDiary | Local-First Forest Diary</title>
+    <link rel="icon" href="favicon.ico" sizes="48x48" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link rel="manifest" href="site.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "CanopyDiary",
+        "applicationCategory": "LifestyleApplication",
+        "operatingSystem": "Any",
+        "description": "A local-first forest diary for dated notes, daily pictures, and optional Google cloud storage."
+      }
+    </script>
+  </head>
+  <body>
+    <div id="appView" class="app-view">
+      <header class="app-header">
+        <a class="brand-mark app-brand" href="#entry" aria-label="CanopyDiary home">
+          <span class="brand-icon"><i data-lucide="leaf"></i></span>
+          <span>CanopyDiary</span>
+        </a>
+
+        <nav class="view-tabs" aria-label="Views">
+          <button class="tab-button active" type="button" data-view-target="entry">
+            <i data-lucide="book-open-text"></i>
+            <span>Diary</span>
+          </button>
+          <button class="tab-button" type="button" data-view-target="gallery">
+            <i data-lucide="images"></i>
+            <span>Gallery</span>
+          </button>
+        </nav>
+
+        <div class="user-menu">
+          <button
+            id="accountAction"
+            class="button button-quiet account-action"
+            type="button"
+            aria-haspopup="dialog"
+            aria-label="Open account options"
+            title="Open account options"
+          >
+            <i data-lucide="user-round"></i>
+            <span>Sign in</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="content-shell">
+        <section id="entryView" class="view-pane active" aria-label="Diary entry">
+          <div class="entry-grid">
+            <section class="surface editor-surface">
+              <div class="date-bar">
+                <button id="prevDay" class="icon-button" type="button" aria-label="Previous day" title="Previous day">
+                  <i data-lucide="chevron-left"></i>
+                </button>
+                <div class="date-field">
+                  <label for="noteDate">Date</label>
+                  <div class="date-input-wrap">
+                    <input id="noteDate" type="date" />
+                    <button
+                      id="noteDatePicker"
+                      class="date-picker-button"
+                      type="button"
+                      aria-label="Open calendar"
+                      title="Open calendar"
+                    >
+                      <i data-lucide="calendar"></i>
+                    </button>
+                  </div>
+                </div>
+                <button id="nextDay" class="icon-button" type="button" aria-label="Next day" title="Next day">
+                  <i data-lucide="chevron-right"></i>
+                </button>
+                <button id="todayButton" class="button button-quiet" type="button">
+                  <i data-lucide="calendar-days"></i>
+                  <span>Today</span>
+                </button>
+              </div>
+
+              <div class="entry-heading">
+                <p id="weekdayLabel" class="eyebrow">Today</p>
+              </div>
+
+              <label class="sr-only" for="noteTitle">Note title</label>
+              <input
+                id="noteTitle"
+                class="note-title-input"
+                type="text"
+                maxlength="120"
+                placeholder="Title this day"
+                autocomplete="off"
+              />
+
+              <label class="sr-only" for="noteText">Diary note</label>
+              <textarea
+                id="noteText"
+                rows="14"
+                placeholder="Write what happened, what mattered, or what you want to remember."
+              ></textarea>
+
+              <div class="editor-actions">
+                <p id="saveState" class="save-state" role="status">Autosave ready</p>
+                <span class="autosave-badge">
+                  <i data-lucide="cloud-check"></i>
+                  <span>Autosave</span>
+                </span>
+              </div>
+            </section>
+
+            <aside class="side-column">
+              <section class="surface photo-surface" aria-labelledby="photosHeading">
+                <div class="section-heading">
+                  <div>
+                    <p class="eyebrow">Separate from the note</p>
+                    <h2 id="photosHeading">Day pictures</h2>
+                  </div>
+                  <button id="uploadTrigger" class="icon-button" type="button" aria-label="Upload pictures" title="Upload pictures">
+                    <i data-lucide="image-plus"></i>
+                  </button>
+                  <input id="photoInput" class="hidden" type="file" accept="image/*" multiple />
+                </div>
+                <div id="dailyPhotos" class="photo-row"></div>
+              </section>
+
+              <section class="surface history-surface" aria-labelledby="historyHeading">
+                <div class="section-heading">
+                  <div>
+                    <p class="eyebrow">Jump by date</p>
+                    <h2 id="historyHeading">Other days</h2>
+                  </div>
+                  <div class="month-input-wrap">
+                    <input id="historyMonth" class="month-input" type="month" />
+                    <button
+                      id="historyMonthPicker"
+                      class="date-picker-button"
+                      type="button"
+                      aria-label="Open month picker"
+                      title="Open month picker"
+                    >
+                      <i data-lucide="calendar"></i>
+                    </button>
+                  </div>
+                </div>
+                <div id="historyList" class="history-list"></div>
+              </section>
+            </aside>
+          </div>
+        </section>
+
+        <section id="galleryView" class="view-pane" aria-labelledby="galleryHeading">
+          <section class="surface gallery-surface">
+            <div class="gallery-toolbar">
+              <div>
+                <p class="eyebrow">Sorted by entry date</p>
+                <h2 id="galleryHeading">All pictures</h2>
+              </div>
+              <div class="gallery-tools">
+                <label class="gallery-filter" for="galleryMonth">
+                  <i data-lucide="calendar-range"></i>
+                  <span class="sr-only">Filter gallery by entry month</span>
+                  <select id="galleryMonth" class="gallery-month-select">
+                    <option value="">All dates</option>
+                  </select>
+                </label>
+                <label class="gallery-filter" for="gallerySort">
+                  <i data-lucide="arrow-down-up"></i>
+                  <span class="sr-only">Sort gallery by entry date</span>
+                  <select id="gallerySort" class="gallery-month-select">
+                    <option value="desc">Newest entries</option>
+                    <option value="asc">Oldest entries</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div id="galleryGrid" class="gallery-grid"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="imageDialog" class="image-dialog" aria-labelledby="dialogDate">
+      <button id="closeDialog" class="icon-button dialog-close" type="button" aria-label="Close" title="Close">
+        <i data-lucide="x"></i>
+      </button>
+      <div class="dialog-layout">
+        <img id="dialogImage" alt="" />
+        <section class="dialog-note">
+          <p id="dialogDate" class="eyebrow"></p>
+          <h2 id="dialogNoteTitle">Note from this day</h2>
+          <p id="dialogNoteText"></p>
+          <div class="dialog-actions">
+            <button id="deleteDialogImage" class="button button-danger" type="button">
+              <i data-lucide="trash-2"></i>
+              <span>Delete picture</span>
+            </button>
+          </div>
+        </section>
+      </div>
+    </dialog>
+
+    <dialog id="accountDialog" class="account-dialog" aria-labelledby="accountTitle">
+      <button id="closeAccountDialog" class="icon-button dialog-close" type="button" aria-label="Close" title="Close">
+        <i data-lucide="x"></i>
+      </button>
+      <section class="account-dialog-body">
+        <p class="eyebrow">Accounts</p>
+        <h2 id="accountTitle">Google sync</h2>
+        <div class="account-status">
+          <span id="modeBadge" class="mode-badge">Local</span>
+          <span class="account-profile">
+            <img id="avatar" class="avatar hidden" alt="" />
+            <span id="userName">Saved locally</span>
+          </span>
+        </div>
+        <div class="account-info">
+          <i data-lucide="cloud"></i>
+          <span>Use Google to sync records across devices.</span>
+        </div>
+        <button id="authAction" class="button button-primary account-google-action" type="button">
+          <i data-lucide="log-in"></i>
+          <span>Continue with Google</span>
+        </button>
+        <div class="account-divider"></div>
+        <button id="deleteAllRecords" class="button button-danger account-delete-action" type="button">
+          <i data-lucide="trash-2"></i>
+          <span>Delete all records</span>
+        </button>
+      </section>
+    </dialog>
+
+    <dialog id="clearDataDialog" class="confirm-dialog" aria-labelledby="clearDataTitle">
+      <button
+        id="closeClearDataDialog"
+        class="icon-button dialog-close"
+        type="button"
+        aria-label="Close"
+        title="Close"
+      >
+        <i data-lucide="x"></i>
+      </button>
+      <section class="confirm-dialog-body">
+        <span class="confirm-icon"><i data-lucide="trash-2"></i></span>
+        <p id="clearDataMode" class="eyebrow">Local records</p>
+        <h2 id="clearDataTitle">Delete all records?</h2>
+        <p class="confirm-copy">
+          This removes every diary note and picture in the current storage mode. This cannot be undone.
+        </p>
+        <p id="clearDataCount" class="confirm-count"></p>
+        <label class="confirm-label" for="clearDataConfirmInput">
+          <span>Type <strong>DELETE ALL</strong> to confirm</span>
+          <input
+            id="clearDataConfirmInput"
+            type="text"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+          />
+        </label>
+        <div class="dialog-actions confirm-actions">
+          <button id="cancelClearData" class="button button-quiet" type="button">Cancel</button>
+          <button id="confirmClearData" class="button button-danger" type="button" disabled>
+            <i data-lucide="trash-2"></i>
+            <span>Delete all records</span>
+          </button>
+        </div>
+      </section>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" defer></script>
+    <script src="firebase-config.js" defer></script>
+    <script src="app.js" defer></script>
+  </body>
+</html>
