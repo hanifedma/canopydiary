@@ -6,10 +6,39 @@
   const LOCAL_DB_NAME = "canopy-diary-local-db";
   const LOCAL_DB_VERSION = 1;
   const LOCAL_IMAGE_STORE = "images";
-  const LOCAL_IMAGE_MAX_EDGE = 1600;
-  const LOCAL_IMAGE_QUALITY = 0.82;
+  const LOCAL_IMAGE_MAX_EDGE = 1280;
+  const LOCAL_IMAGE_QUALITY = 0.78;
   const CLEAR_CONFIRM_TEXT = "DELETE ALL";
   const PLACEHOLDER_VALUES = new Set(["", "YOUR_API_KEY", "YOUR_PROJECT_ID"]);
+  const FIREBASE_SDK_URLS = [
+    "https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js",
+    "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js",
+    "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js",
+    "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"
+  ];
+  const DATE_FORMATTERS = {
+    full: new Intl.DateTimeFormat(undefined, {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    }),
+    short: new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric"
+    }),
+    month: new Intl.DateTimeFormat(undefined, {
+      month: "long",
+      year: "numeric"
+    }),
+    generated: new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    })
+  };
 
   const els = {
     appView: document.getElementById("appView"),
@@ -39,6 +68,18 @@
     galleryMonth: document.getElementById("galleryMonth"),
     gallerySort: document.getElementById("gallerySort"),
     galleryGrid: document.getElementById("galleryGrid"),
+    openExportDialog: document.getElementById("openExportDialog"),
+    exportDialog: document.getElementById("exportDialog"),
+    closeExportDialog: document.getElementById("closeExportDialog"),
+    cancelExport: document.getElementById("cancelExport"),
+    exportStartDate: document.getElementById("exportStartDate"),
+    exportStartPicker: document.getElementById("exportStartPicker"),
+    exportEndDate: document.getElementById("exportEndDate"),
+    exportEndPicker: document.getElementById("exportEndPicker"),
+    exportSort: document.getElementById("exportSort"),
+    exportSummary: document.getElementById("exportSummary"),
+    confirmExport: document.getElementById("confirmExport"),
+    printExport: document.getElementById("printExport"),
     imageDialog: document.getElementById("imageDialog"),
     closeDialog: document.getElementById("closeDialog"),
     dialogImage: document.getElementById("dialogImage"),
@@ -71,9 +112,14 @@
     noteTextDate: null,
     toastTimer: null,
     unsubscribeNotes: null,
-    unsubscribeImages: null
+    unsubscribeImages: null,
+    renderFrame: null,
+    localLoadToken: 0,
+    firebaseLoading: false,
+    firebaseLoadFailed: false
   };
   let localImageDbPromise = null;
+  let firebaseSdkPromise = null;
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -88,9 +134,17 @@
 
     signInLocal({ silent: true });
 
-    const firebaseReady = hasFirebaseConfig() && window.firebase;
-    if (firebaseReady) {
-      initFirebase();
+    if (hasFirebaseConfig()) {
+      state.firebaseLoading = true;
+      updateAuthAction();
+      loadFirebaseSdk()
+        .then(initFirebase)
+        .catch(() => {
+          state.firebaseLoading = false;
+          state.firebaseLoadFailed = true;
+          updateAuthAction();
+          showToast("Google sync could not load. Local saving still works.");
+        });
       return;
     }
 
@@ -108,6 +162,14 @@
 
     els.authAction.addEventListener("click", () => {
       closeAccountDialog();
+      if (state.firebaseLoading) {
+        showToast("Google sync is still loading.");
+        return;
+      }
+      if (state.firebaseLoadFailed) {
+        showToast("Google sync could not load. Check the Firebase config or connection.");
+        return;
+      }
       if (state.mode === "firebase" && state.cloud && state.cloud.signOut) {
         state.cloud.signOut();
         return;
@@ -149,6 +211,21 @@
     els.galleryMonth.addEventListener("change", renderGallery);
     els.gallerySort.addEventListener("change", renderGallery);
 
+    els.openExportDialog.addEventListener("click", openExportDialog);
+    els.closeExportDialog.addEventListener("click", closeExportDialog);
+    els.cancelExport.addEventListener("click", closeExportDialog);
+    els.exportStartDate.addEventListener("change", updateExportSummary);
+    els.exportEndDate.addEventListener("change", updateExportSummary);
+    els.exportSort.addEventListener("change", updateExportSummary);
+    els.exportStartPicker.addEventListener("click", () => openPicker(els.exportStartDate));
+    els.exportEndPicker.addEventListener("click", () => openPicker(els.exportEndDate));
+    els.confirmExport.addEventListener("click", requestPdfExport);
+    els.exportDialog.addEventListener("click", (event) => {
+      if (event.target === els.exportDialog) {
+        closeExportDialog();
+      }
+    });
+
     els.closeDialog.addEventListener("click", () => closeImageDialog());
     els.deleteDialogImage.addEventListener("click", () => {
       if (state.activeDialogImageId) {
@@ -176,6 +253,7 @@
     });
 
     window.addEventListener("hashchange", syncViewFromHash);
+    window.addEventListener("afterprint", clearPrintExport);
   }
 
   function hasFirebaseConfig() {
@@ -186,8 +264,53 @@
     });
   }
 
+  function loadFirebaseSdk() {
+    if (window.firebase) {
+      return Promise.resolve();
+    }
+
+    if (!firebaseSdkPromise) {
+      firebaseSdkPromise = FIREBASE_SDK_URLS.reduce(
+        (promise, src) => promise.then(() => loadScript(src)),
+        Promise.resolve()
+      );
+    }
+
+    return firebaseSdkPromise;
+  }
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[src="${src}"]`);
+      if (existing && existing.dataset.loaded === "true") {
+        resolve();
+        return;
+      }
+
+      const script = existing || document.createElement("script");
+      script.src = src;
+      script.defer = true;
+      script.async = false;
+      script.onload = () => {
+        script.dataset.loaded = "true";
+        resolve();
+      };
+      script.onerror = () => reject(new Error(`Could not load ${src}`));
+
+      if (!existing) {
+        document.head.appendChild(script);
+      }
+    });
+  }
+
   function initFirebase() {
-    firebase.initializeApp(window.DIARY_FIREBASE_CONFIG);
+    if (!window.firebase) {
+      throw new Error("Firebase SDK did not load.");
+    }
+
+    if (!firebase.apps.length) {
+      firebase.initializeApp(window.DIARY_FIREBASE_CONFIG);
+    }
     const auth = firebase.auth();
     const provider = new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
@@ -202,7 +325,7 @@
             return auth.signInWithRedirect(provider);
           }
           showToast(error.message || "Google sign-in failed.");
-      }),
+        }),
       signOut: () => auth.signOut(),
       saveNote: (date, title, text) => saveFirebaseNote(db, auth.currentUser, date, title, text),
       deleteNote: (date) => deleteFirebaseNote(db, auth.currentUser, date),
@@ -211,6 +334,8 @@
       deleteAllRecords: () => deleteAllFirebaseRecords(db, storage, auth.currentUser),
       listen: (user) => listenFirebaseData(db, user)
     };
+    state.firebaseLoading = false;
+    state.firebaseLoadFailed = false;
 
     auth.onAuthStateChanged(async (user) => {
       if (!user) {
@@ -221,7 +346,15 @@
         return;
       }
 
-      await upsertProfile(db, user);
+      try {
+        await upsertProfile(db, user);
+      } catch (error) {
+        showToast(error.message || "Could not prepare Google sync.");
+        signInLocal({ silent: true });
+        return;
+      }
+
+      state.localLoadToken += 1;
       state.mode = "firebase";
       state.user = normalizeFirebaseUser(user);
       state.backend = state.cloud;
@@ -237,6 +370,8 @@
     const immediatelyAvailableImages = mergeImageArrays(readLegacyLocalStore().images, store.images || []).sort(
       sortImagesNewestFirst
     );
+    const loadToken = state.localLoadToken + 1;
+    state.localLoadToken = loadToken;
     stopDataListeners();
     state.mode = "local";
     state.backend = {
@@ -261,15 +396,20 @@
       showToast("Saving this diary locally on this device.");
     }
 
-    try {
-      const durableImages = await loadLocalImages(store);
-      state.images = durableImages;
-      renderAll();
-    } catch (error) {
-      if (!options.silent) {
-        showToast("Could not load local pictures. New uploads will still be saved.");
+    scheduleIdleTask(async () => {
+      try {
+        const durableImages = await loadLocalImages(store);
+        if (state.mode !== "local" || state.localLoadToken !== loadToken) {
+          return;
+        }
+        state.images = durableImages;
+        requestRenderAll();
+      } catch (error) {
+        if (!options.silent && state.mode === "local" && state.localLoadToken === loadToken) {
+          showToast("Could not load local pictures. New uploads will still be saved.");
+        }
       }
-    }
+    });
   }
 
   function showApp() {
@@ -283,45 +423,45 @@
       els.avatar.classList.add("hidden");
     }
     updateAuthAction();
-    syncViewFromHash();
-    renderAll();
+    if (!syncViewFromHash()) {
+      renderAll();
+    }
   }
 
   function updateAuthAction() {
+    let accountConfig = ["user-round", "Sign in", "Open account options"];
+    let authConfig = ["log-in", "Continue with Google", "Add Firebase config to enable Google sign-in"];
+    let authDisabled = false;
+
     if (state.mode === "firebase") {
-      setAccountAction("user-round", "Account", "Open account options");
-      setAuthAction("log-out", "Sign out", "Sign out of Google");
-      els.authAction.classList.remove("hidden");
-      els.authAction.disabled = false;
-      return;
+      accountConfig = ["user-round", "Account", "Open account options"];
+      authConfig = ["log-out", "Sign out", "Sign out of Google"];
+    } else if (state.firebaseLoading) {
+      authConfig = ["cloud", "Loading Google sync", "Google sync is loading"];
+      authDisabled = true;
+    } else if (state.firebaseLoadFailed) {
+      authConfig = ["cloud-off", "Google unavailable", "Google sync could not load"];
+    } else if (state.cloud && state.cloud.signIn) {
+      authConfig = ["log-in", "Continue with Google", "Sign in with Google for cloud storage"];
     }
 
-    if (state.cloud && state.cloud.signIn) {
-      setAccountAction("user-round", "Sign in", "Open account options");
-      setAuthAction("log-in", "Continue with Google", "Sign in with Google for cloud storage");
-      els.authAction.classList.remove("hidden");
-      els.authAction.disabled = false;
-      return;
-    }
-
-    setAccountAction("user-round", "Sign in", "Open account options");
-    setAuthAction("log-in", "Continue with Google", "Add Firebase config to enable Google sign-in");
+    setAccountAction(...accountConfig);
+    setAuthAction(...authConfig);
     els.authAction.classList.remove("hidden");
-    els.authAction.disabled = false;
+    els.authAction.disabled = authDisabled;
+    refreshIcons();
   }
 
   function setAccountAction(icon, label, title) {
     els.accountAction.innerHTML = `<i data-lucide="${icon}"></i><span>${label}</span>`;
     els.accountAction.setAttribute("aria-label", title);
     els.accountAction.setAttribute("title", title);
-    refreshIcons();
   }
 
   function setAuthAction(icon, label, title) {
     els.authAction.innerHTML = `<i data-lucide="${icon}"></i><span>${label}</span>`;
     els.authAction.setAttribute("aria-label", title);
     els.authAction.setAttribute("title", title);
-    refreshIcons();
   }
 
   async function saveCurrentNote(options = {}) {
@@ -554,6 +694,238 @@
     };
   }
 
+  async function openExportDialog() {
+    await flushAutoSave();
+
+    const range = getDefaultExportRange();
+    els.exportStartDate.value = range.start;
+    els.exportEndDate.value = range.end;
+    els.exportSort.value = "asc";
+    updateExportSummary();
+
+    if (typeof els.exportDialog.showModal === "function") {
+      els.exportDialog.showModal();
+    } else {
+      els.exportDialog.setAttribute("open", "");
+    }
+
+    window.setTimeout(() => els.exportStartDate.focus(), 0);
+  }
+
+  function closeExportDialog() {
+    if (typeof els.exportDialog.close === "function") {
+      els.exportDialog.close();
+    } else {
+      els.exportDialog.removeAttribute("open");
+    }
+  }
+
+  function getDefaultExportRange() {
+    const dates = getKnownDates(getImageIndexByDate()).sort((a, b) => a.localeCompare(b));
+    if (!dates.length) {
+      const today = localDateKey();
+      return { start: today, end: today };
+    }
+
+    return {
+      start: dates[0],
+      end: dates[dates.length - 1]
+    };
+  }
+
+  function updateExportSummary() {
+    const range = getSelectedExportRange();
+    if (!range) {
+      els.exportSummary.textContent = "Choose a valid date range.";
+      els.confirmExport.disabled = true;
+      return;
+    }
+
+    const entries = getExportEntries(range.start, range.end, els.exportSort.value);
+    const noteCount = entries.filter((entry) => noteHasContent(entry.note)).length;
+    const imageCount = entries.reduce((total, entry) => total + entry.images.length, 0);
+
+    els.exportSummary.textContent = entries.length
+      ? `${formatCount(entries.length, "day")}, ${formatCount(noteCount, "note")}, ${formatCount(imageCount, "picture")}.`
+      : "No records in this range.";
+    els.confirmExport.disabled = !entries.length;
+  }
+
+  function getSelectedExportRange() {
+    const start = validDateKey(els.exportStartDate.value);
+    const end = validDateKey(els.exportEndDate.value);
+    if (!start || !end || start > end) {
+      return null;
+    }
+
+    return { start, end };
+  }
+
+  async function requestPdfExport() {
+    await flushAutoSave();
+
+    const range = getSelectedExportRange();
+    if (!range) {
+      updateExportSummary();
+      showToast("Choose a valid date range.");
+      return;
+    }
+
+    const entries = getExportEntries(range.start, range.end, els.exportSort.value);
+    if (!entries.length) {
+      updateExportSummary();
+      showToast("No records in this range.");
+      return;
+    }
+
+    setExportBusy(true);
+    try {
+      renderPrintExport(entries, range);
+      await waitForPrintImages(els.printExport);
+      closeExportDialog();
+      window.setTimeout(() => {
+        window.print();
+        window.setTimeout(clearPrintExport, 60000);
+      }, 80);
+    } catch (error) {
+      showToast(error.message || "Could not create PDF.");
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  function setExportBusy(isBusy) {
+    els.closeExportDialog.disabled = isBusy;
+    els.cancelExport.disabled = isBusy;
+    els.exportStartDate.disabled = isBusy;
+    els.exportStartPicker.disabled = isBusy;
+    els.exportEndDate.disabled = isBusy;
+    els.exportEndPicker.disabled = isBusy;
+    els.exportSort.disabled = isBusy;
+    els.confirmExport.disabled = isBusy || !getExportEntriesForSelection().length;
+  }
+
+  function getExportEntriesForSelection() {
+    const range = getSelectedExportRange();
+    return range ? getExportEntries(range.start, range.end, els.exportSort.value) : [];
+  }
+
+  function getExportEntries(start, end, sortDirection) {
+    const direction = sortDirection === "desc" ? "desc" : "asc";
+    const imageIndex = getImageIndexByDate();
+    return getKnownDates(imageIndex)
+      .filter((date) => date >= start && date <= end)
+      .sort((a, b) => (direction === "asc" ? a.localeCompare(b) : b.localeCompare(a)))
+      .map((date) => ({
+        date,
+        note: state.notes.get(date) || null,
+        images: [...(imageIndex.get(date) || [])].sort(sortExportImages)
+      }));
+  }
+
+  function getImagesForDate(date) {
+    return state.images.filter((image) => image.url && imageEntryDateKey(image) === date);
+  }
+
+  function sortExportImages(a, b) {
+    const uploadCompare = getTimestamp(a.uploadedAt) - getTimestamp(b.uploadedAt);
+    if (uploadCompare !== 0) {
+      return uploadCompare;
+    }
+
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  }
+
+  function renderPrintExport(entries, range) {
+    const imageCount = entries.reduce((total, entry) => total + entry.images.length, 0);
+    const generatedAt = DATE_FORMATTERS.generated.format(new Date());
+
+    els.printExport.setAttribute("aria-hidden", "false");
+    els.printExport.innerHTML = `
+      <section class="print-cover">
+        <p class="print-kicker">CanopyDiary</p>
+        <h1>Diary Archive</h1>
+        <p class="print-range">${escapeHtml(fullDateLabel(range.start))} - ${escapeHtml(fullDateLabel(range.end))}</p>
+        <p class="print-meta">${escapeHtml(formatCount(entries.length, "day"))} / ${escapeHtml(
+          formatCount(imageCount, "picture")
+        )} / Generated ${escapeHtml(generatedAt)}</p>
+      </section>
+      ${entries.map(renderPrintEntry).join("")}
+    `;
+  }
+
+  function renderPrintEntry(entry) {
+    const note = entry.note;
+    const title = note && note.title && note.title.trim() ? note.title.trim() : "Untitled entry";
+    const text = note && note.text && note.text.trim() ? note.text.trim() : "No written note.";
+    const images = entry.images.length
+      ? `
+        <div class="print-image-grid">
+          ${entry.images.map(renderPrintImage).join("")}
+        </div>
+      `
+      : "";
+
+    return `
+      <article class="print-entry">
+        <p class="print-date">${escapeHtml(fullDateLabel(entry.date))}</p>
+        <h2>${escapeHtml(title)}</h2>
+        <div class="print-note">${escapeHtml(text)}</div>
+        ${images}
+      </article>
+    `;
+  }
+
+  function renderPrintImage(image) {
+    const uploaded = uploadLabel(image.uploadedAt, image.date);
+    const caption = [image.name || "Diary picture", uploaded ? `Uploaded ${uploaded}` : ""].filter(Boolean).join(" / ");
+    return `
+      <figure class="print-image">
+        <img src="${escapeAttribute(image.url)}" alt="${escapeAttribute(image.name || "Diary picture")}" />
+        <figcaption>${escapeHtml(caption)}</figcaption>
+      </figure>
+    `;
+  }
+
+  function waitForPrintImages(container) {
+    const images = Array.from(container.querySelectorAll("img"));
+    if (!images.length) {
+      return Promise.resolve();
+    }
+
+    const imagePromises = images.map(
+      (image) =>
+        new Promise((resolve) => {
+          if (image.complete) {
+            resolve();
+            return;
+          }
+          image.addEventListener("load", resolve, { once: true });
+          image.addEventListener("error", resolve, { once: true });
+        })
+    );
+
+    return Promise.race([Promise.allSettled(imagePromises), delay(2800)]);
+  }
+
+  function delay(milliseconds) {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+  }
+
+  function scheduleIdleTask(task) {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(task, { timeout: 1200 });
+      return;
+    }
+
+    window.setTimeout(task, 80);
+  }
+
+  function clearPrintExport() {
+    els.printExport.innerHTML = "";
+    els.printExport.setAttribute("aria-hidden", "true");
+  }
+
   function formatCount(count, label) {
     return `${count} ${label}${count === 1 ? "" : "s"}`;
   }
@@ -588,8 +960,12 @@
     store.notes[date] = note;
     writeLocalStore(store);
     state.notes.set(date, note);
-    renderHistory();
-    refreshIcons();
+    if (state.currentView === "entry") {
+      renderHistory();
+    }
+    if (els.exportDialog.hasAttribute("open")) {
+      updateExportSummary();
+    }
     return Promise.resolve();
   }
 
@@ -598,8 +974,12 @@
     delete store.notes[date];
     writeLocalStore(store);
     state.notes.delete(date);
-    renderHistory();
-    refreshIcons();
+    if (state.currentView === "entry") {
+      renderHistory();
+    }
+    if (els.exportDialog.hasAttribute("open")) {
+      updateExportSummary();
+    }
     return Promise.resolve();
   }
 
@@ -607,9 +987,9 @@
     const entryDate = validDateKey(date) || localDateKey();
     const additions = [];
     for (const file of files) {
-      const prepared = await prepareLocalImage(file);
+      const prepared = await prepareDiaryImage(file);
       additions.push({
-        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+        id: createId(),
         date: entryDate,
         url: prepared.url,
         name: file.name,
@@ -937,7 +1317,7 @@
     });
   }
 
-  async function prepareLocalImage(file) {
+  async function prepareDiaryImage(file) {
     const originalUrl = await readFileAsDataUrl(file);
     const fallback = {
       url: originalUrl,
@@ -1011,6 +1391,14 @@
     return Math.round((base64.length * 3) / 4);
   }
 
+  function createId() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
   async function upsertProfile(db, user) {
     const profileRef = db.collection("users").doc(user.uid);
     const profileSnap = await profileRef.get();
@@ -1053,7 +1441,7 @@
       .onSnapshot(
         (snapshot) => {
           state.notes = normalizeNotes(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })));
-          renderAll();
+          requestRenderAll();
         },
         (error) => showToast(error.message || "Could not load notes.")
       );
@@ -1064,7 +1452,7 @@
       .onSnapshot(
         (snapshot) => {
           state.images = normalizeImages(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })));
-          renderAll();
+          requestRenderAll();
         },
         (error) => showToast(error.message || "Could not load pictures.")
       );
@@ -1105,12 +1493,13 @@
     const entryDate = validDateKey(date) || localDateKey();
     const base = db.collection("users").doc(activeUser.uid).collection("images");
     for (const file of files) {
+      const prepared = await prepareDiaryImage(file);
       const id = base.doc().id;
-      const safeName = file.name.replace(/[^a-z0-9._-]/gi, "_").slice(0, 90);
+      const safeName = file.name.replace(/[^a-z0-9._-]/gi, "_").slice(0, 90) || "picture.jpg";
       const storagePath = `users/${activeUser.uid}/images/${entryDate}/${id}-${safeName}`;
       const ref = storage.ref(storagePath);
-      await ref.put(file, {
-        contentType: file.type,
+      await ref.putString(prepared.url, "data_url", {
+        contentType: prepared.contentType,
         customMetadata: {
           owner: activeUser.uid,
           date: entryDate
@@ -1122,8 +1511,11 @@
         url,
         storagePath,
         name: file.name,
-        size: file.size,
-        contentType: file.type,
+        size: prepared.size || file.size,
+        originalSize: file.size,
+        width: prepared.width,
+        height: prepared.height,
+        contentType: prepared.contentType,
         uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
       });
     }
@@ -1251,18 +1643,38 @@
     const view = window.location.hash.replace("#", "");
     if ((view === "entry" || view === "gallery") && state.currentView !== view) {
       setView(view);
+      return true;
     }
+    return false;
   }
 
   function renderAll() {
     if (!state.user) {
       return;
     }
-    renderEditor();
-    renderDailyPhotos();
-    renderHistory();
-    renderGallery();
-    refreshIcons();
+    if (state.currentView === "gallery") {
+      renderGallery();
+    } else {
+      renderEditor();
+      renderDailyPhotos();
+      renderHistory();
+    }
+
+    if (els.exportDialog.hasAttribute("open")) {
+      updateExportSummary();
+    }
+  }
+
+  function requestRenderAll() {
+    if (state.renderFrame) {
+      return;
+    }
+
+    const scheduleFrame = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 16));
+    state.renderFrame = scheduleFrame(() => {
+      state.renderFrame = null;
+      renderAll();
+    });
   }
 
   function renderEditor() {
@@ -1313,8 +1725,9 @@
 
   function renderHistory() {
     const month = els.historyMonth.value || state.selectedDate.slice(0, 7);
-    const imageCounts = getImageCountsByDate();
-    const dates = getKnownDates()
+    const imageIndex = getImageIndexByDate();
+    const imageCounts = getImageCountsByDate(imageIndex);
+    const dates = getKnownDates(imageIndex)
       .filter((date) => date.startsWith(month))
       .sort((a, b) => b.localeCompare(a));
 
@@ -1343,6 +1756,7 @@
         await setSelectedDate(button.dataset.date);
       });
     });
+    refreshIcons();
   }
 
   function renderGallery() {
@@ -1426,28 +1840,47 @@
     } else {
       els.imageDialog.removeAttribute("open");
     }
+    els.dialogImage.removeAttribute("src");
   }
 
-  function getKnownDates() {
+  function getKnownDates(imageIndex = getImageIndexByDate()) {
     const dates = new Set();
-    const imageCounts = getImageCountsByDate();
     state.notes.forEach((note, date) => {
       const dateKey = validDateKey(date);
-      if (dateKey && (note.title || note.text || imageCounts.has(dateKey))) {
+      if (dateKey && (noteHasContent(note) || imageIndex.has(dateKey))) {
         dates.add(dateKey);
       }
     });
-    imageCounts.forEach((count, date) => dates.add(date));
+    imageIndex.forEach((images, date) => {
+      if (images.length) {
+        dates.add(date);
+      }
+    });
     return Array.from(dates);
   }
 
-  function getImageCountsByDate() {
-    const counts = new Map();
+  function getImageIndexByDate() {
+    const imagesByDate = new Map();
     state.images.forEach((image) => {
-      const dateKey = imageEntryDateKey(image);
-      if (dateKey) {
-        counts.set(dateKey, (counts.get(dateKey) || 0) + 1);
+      if (!image.url) {
+        return;
       }
+      const dateKey = imageEntryDateKey(image);
+      if (!dateKey) {
+        return;
+      }
+      if (!imagesByDate.has(dateKey)) {
+        imagesByDate.set(dateKey, []);
+      }
+      imagesByDate.get(dateKey).push(image);
+    });
+    return imagesByDate;
+  }
+
+  function getImageCountsByDate(imageIndex = getImageIndexByDate()) {
+    const counts = new Map();
+    imageIndex.forEach((images, date) => {
+      counts.set(date, images.length);
     });
     return counts;
   }
@@ -1474,6 +1907,10 @@
       return note.text.trim();
     }
     return "Pictures only";
+  }
+
+  function noteHasContent(note) {
+    return Boolean(note && ((note.title && note.title.trim()) || (note.text && note.text.trim())));
   }
 
   function noteTitleForDisplay(note) {
@@ -1509,12 +1946,7 @@
     if (!parsed) {
       return "Unknown date";
     }
-    return new Intl.DateTimeFormat(undefined, {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric"
-    }).format(parsed);
+    return DATE_FORMATTERS.full.format(parsed);
   }
 
   function shortDateLabel(date) {
@@ -1522,10 +1954,7 @@
     if (!parsed) {
       return "Unknown";
     }
-    return new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric"
-    }).format(parsed);
+    return DATE_FORMATTERS.short.format(parsed);
   }
 
   function validDateKey(date) {
@@ -1565,10 +1994,7 @@
     if (!date) {
       return fallbackDate ? shortDateLabel(fallbackDate) : "";
     }
-    return new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric"
-    }).format(date);
+    return DATE_FORMATTERS.short.format(date);
   }
 
   function monthLabel(monthKey) {
@@ -1579,10 +2005,7 @@
     if (Number.isNaN(parsed.getTime())) {
       return "Unknown month";
     }
-    return new Intl.DateTimeFormat(undefined, {
-      month: "long",
-      year: "numeric"
-    }).format(parsed);
+    return DATE_FORMATTERS.month.format(parsed);
   }
 
   function getTimestamp(value) {

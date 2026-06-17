@@ -173,6 +173,19 @@
                 </div>
                 <div id="historyList" class="history-list"></div>
               </section>
+
+              <section class="surface export-surface" aria-labelledby="exportHeading">
+                <div class="section-heading">
+                  <div>
+                    <p class="eyebrow">Archive</p>
+                    <h2 id="exportHeading">PDF</h2>
+                  </div>
+                  <button id="openExportDialog" class="button button-primary export-open-action" type="button">
+                    <i data-lucide="file-down"></i>
+                    <span>Export</span>
+                  </button>
+                </div>
+              </section>
             </aside>
           </div>
         </section>
@@ -296,13 +309,68 @@
       </section>
     </dialog>
 
+    <dialog id="exportDialog" class="export-dialog" aria-labelledby="exportTitle">
+      <button id="closeExportDialog" class="icon-button dialog-close" type="button" aria-label="Close" title="Close">
+        <i data-lucide="x"></i>
+      </button>
+      <section class="export-dialog-body">
+        <p class="eyebrow">Archive</p>
+        <h2 id="exportTitle">Export PDF</h2>
+        <div class="export-range-grid">
+          <label class="export-field" for="exportStartDate">
+            <span>From</span>
+            <div class="date-input-wrap">
+              <input id="exportStartDate" type="date" />
+              <button
+                id="exportStartPicker"
+                class="date-picker-button"
+                type="button"
+                aria-label="Open start date"
+                title="Open start date"
+              >
+                <i data-lucide="calendar"></i>
+              </button>
+            </div>
+          </label>
+          <label class="export-field" for="exportEndDate">
+            <span>To</span>
+            <div class="date-input-wrap">
+              <input id="exportEndDate" type="date" />
+              <button
+                id="exportEndPicker"
+                class="date-picker-button"
+                type="button"
+                aria-label="Open end date"
+                title="Open end date"
+              >
+                <i data-lucide="calendar"></i>
+              </button>
+            </div>
+          </label>
+          <label class="export-field" for="exportSort">
+            <span>Order</span>
+            <select id="exportSort" class="export-select">
+              <option value="asc">Oldest first</option>
+              <option value="desc">Newest first</option>
+            </select>
+          </label>
+        </div>
+        <p id="exportSummary" class="export-summary" role="status"></p>
+        <div class="dialog-actions confirm-actions">
+          <button id="cancelExport" class="button button-quiet" type="button">Cancel</button>
+          <button id="confirmExport" class="button button-primary" type="button">
+            <i data-lucide="file-down"></i>
+            <span>Create PDF</span>
+          </button>
+        </div>
+      </section>
+    </dialog>
+
+    <div id="printExport" class="print-export" aria-hidden="true"></div>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js" defer></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js" defer></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" defer></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" defer></script>
     <script src="firebase-config.js" defer></script>
     <script src="app.js" defer></script>
   </body>

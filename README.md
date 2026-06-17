@@ -6,11 +6,13 @@ A lightweight local-first diary web app with optional Google sign-in, dated note
 
 - Static frontend that can be hosted on GitHub Pages.
 - Opens directly into the diary and saves locally by default.
+- Loads Firebase only when a real config is present, keeping the local app light.
 - Each diary entry has a title and body text.
 - Optional Firebase Authentication with Google provider only for cloud sync.
 - Firestore notes under `users/{uid}/notes/{yyyy-mm-dd}`.
 - Firebase Storage pictures under `users/{uid}/images/{date}/...`.
 - Gallery sorted by date; clicking a picture opens the note for that day.
+- Manual PDF export for a selected date range, including notes and pictures.
 - Picture delete control in the image dialog after opening a picture.
 - Autosaves diary text after you pause writing, with no Save click required.
 - Favicon, web app manifest, robots file, and social/SEO metadata.
