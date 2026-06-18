@@ -9,6 +9,8 @@
   const LOCAL_IMAGE_MAX_EDGE = 1280;
   const LOCAL_IMAGE_QUALITY = 0.78;
   const CLEAR_CONFIRM_TEXT = "DELETE ALL";
+  const APP_VERSION = "20260619";
+  const UPDATE_RELOAD_KEY = "canopy-update-version";
   const PLACEHOLDER_VALUES = new Set([
     "",
     "YOUR_SUPABASE_URL",
@@ -160,7 +162,8 @@
     supabaseLoading: false,
     supabaseLoadFailed: false,
     galleryMonthSignature: "",
-    supabaseReloadTimer: null
+    supabaseReloadTimer: null,
+    updatePending: false
   };
   let localImageDbPromise = null;
   let supabaseSdkPromise = null;
@@ -170,6 +173,7 @@
   function init() {
     bindEvents();
     refreshIcons();
+    watchForUpdates();
 
     els.noteDate.value = state.selectedDate;
     els.historyMonth.value = state.selectedDate.slice(0, 7);
@@ -828,11 +832,62 @@
     return { start, end };
   }
 
+  const PRINT_DOCUMENT_STYLES = [
+    "*{box-sizing:border-box}",
+    'html,body{margin:0;background:#fff;color:#172015;font:11pt/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}',
+    "body{padding:16px}",
+    "@page{margin:14mm}",
+    ".print-cover{padding:0 0 10mm;margin:0 0 9mm;border-bottom:1px solid #b8c4ad}",
+    ".print-kicker,.print-date,.print-meta,.print-range,.print-image figcaption{margin:0;color:#53614d}",
+    ".print-kicker,.print-date{color:#4d642f;font-weight:800;text-transform:uppercase}",
+    ".print-kicker{font-size:10pt}",
+    ".print-cover h1{margin:3mm 0 2mm;color:#172015;font-size:27pt;line-height:1.08}",
+    ".print-range{font-size:13pt;font-weight:760}",
+    ".print-meta{margin-top:3mm;font-size:9pt}",
+    ".print-entry{break-inside:avoid;page-break-inside:avoid;padding-top:7mm;margin-top:7mm;border-top:1px solid #d4ddca}",
+    ".print-entry:first-of-type{padding-top:0;margin-top:0;border-top:0}",
+    ".print-date{margin-bottom:2mm;font-size:9pt}",
+    ".print-entry h2{margin:0 0 4mm;color:#172015;font-size:17pt;line-height:1.18}",
+    ".print-note{white-space:pre-wrap}",
+    ".print-image-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5mm;margin-top:6mm}",
+    ".print-image{break-inside:avoid;page-break-inside:avoid;margin:0;padding:2mm;border:1px solid #cad5c0;border-radius:2mm}",
+    ".print-image img{width:100%;max-height:96mm;object-fit:contain;display:block}",
+    ".print-image figcaption{margin-top:1.8mm;font-size:8pt;line-height:1.35}"
+  ].join("");
+
+  const PRINT_DOCUMENT_SCRIPT = [
+    "(function(){",
+    "var fired=false;",
+    "function triggerPrint(){if(fired)return;fired=true;",
+    "setTimeout(function(){try{window.focus();window.print();}catch(e){}},80);}",
+    "function ready(){",
+    "var images=Array.prototype.slice.call(document.images||[]);",
+    "var pending=images.length;",
+    "if(!pending){triggerPrint();return;}",
+    "var fallback=setTimeout(triggerPrint,5000);",
+    "var done=function(){if(--pending<=0){clearTimeout(fallback);triggerPrint();}};",
+    "images.forEach(function(img){",
+    "if(img.complete){done();return;}",
+    "img.addEventListener('load',done,{once:true});",
+    "img.addEventListener('error',done,{once:true});",
+    "});}",
+    "if(document.readyState==='complete'){ready();}",
+    "else{window.addEventListener('load',ready);}",
+    "})();"
+  ].join("");
+
   async function requestPdfExport() {
+    // Open the print tab synchronously, while the user's tap still counts as
+    // activation. Mobile browsers block window.open() after an await, and a
+    // dedicated print tab is far more reliable than calling window.print() on
+    // the live page (which fails or prints blank on many phones and tablets).
+    const printWindow = openPrintWindow();
+
     await flushAutoSave();
 
     const range = getSelectedExportRange();
     if (!range) {
+      closePrintWindow(printWindow);
       updateExportSummary();
       showToast("Choose a valid date range.");
       return;
@@ -840,6 +895,7 @@
 
     const entries = getExportEntries(range.start, range.end, els.exportSort.value);
     if (!entries.length) {
+      closePrintWindow(printWindow);
       updateExportSummary();
       showToast("No records in this range.");
       return;
@@ -847,17 +903,53 @@
 
     setExportBusy(true);
     try {
-      renderPrintExport(entries, range);
-      await waitForPrintImages(els.printExport);
-      closeExportDialog();
-      window.setTimeout(() => {
-        window.print();
-        window.setTimeout(clearPrintExport, 60000);
-      }, 80);
+      if (printWindow && !printWindow.closed) {
+        printWindow.document.open();
+        printWindow.document.write(buildPrintDocument(entries, range));
+        printWindow.document.close();
+        closeExportDialog();
+      } else {
+        // Popups are blocked: fall back to printing the current page.
+        renderPrintExport(entries, range);
+        await waitForPrintImages(els.printExport);
+        closeExportDialog();
+        window.setTimeout(() => {
+          window.print();
+          window.setTimeout(clearPrintExport, 60000);
+        }, 80);
+      }
     } catch (error) {
+      closePrintWindow(printWindow);
       showToast(error.message || "Could not create PDF.");
     } finally {
       setExportBusy(false);
+    }
+  }
+
+  function openPrintWindow() {
+    let printWindow = null;
+    try {
+      printWindow = window.open("", "_blank");
+    } catch (error) {
+      return null;
+    }
+    if (printWindow) {
+      printWindow.document.write(
+        '<!doctype html><meta charset="utf-8"><title>Preparing PDF</title>' +
+          '<body style="margin:0;font-family:system-ui,sans-serif;color:#3a4d3d;background:#fff">' +
+          '<p style="padding:18px">Preparing your PDF&hellip;</p>'
+      );
+    }
+    return printWindow;
+  }
+
+  function closePrintWindow(printWindow) {
+    if (printWindow && !printWindow.closed) {
+      try {
+        printWindow.close();
+      } catch (error) {
+        // The tab may already be gone; nothing to do.
+      }
     }
   }
 
@@ -900,11 +992,15 @@
   }
 
   function renderPrintExport(entries, range) {
+    els.printExport.setAttribute("aria-hidden", "false");
+    els.printExport.innerHTML = buildPrintMarkup(entries, range);
+  }
+
+  function buildPrintMarkup(entries, range) {
     const imageCount = entries.reduce((total, entry) => total + entry.images.length, 0);
     const generatedAt = DATE_FORMATTERS.generated.format(new Date());
 
-    els.printExport.setAttribute("aria-hidden", "false");
-    els.printExport.innerHTML = `
+    return `
       <section class="print-cover">
         <p class="print-kicker">CanopyDiary</p>
         <h1>Diary Archive</h1>
@@ -915,6 +1011,21 @@
       </section>
       ${entries.map(renderPrintEntry).join("")}
     `;
+  }
+
+  // A self-contained printable document. The new export tab carries its own
+  // styles and a tiny script that waits for the pictures, then prints itself,
+  // so it does not depend on styles.css loading or on the live app at all.
+  function buildPrintDocument(entries, range) {
+    return (
+      '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      "<title>CanopyDiary Archive</title>" +
+      `<style>${PRINT_DOCUMENT_STYLES}</style></head><body>` +
+      buildPrintMarkup(entries, range) +
+      `<script>${PRINT_DOCUMENT_SCRIPT}<\/script>` +
+      "</body></html>"
+    );
   }
 
   function renderPrintEntry(entry) {
@@ -987,6 +1098,68 @@
   function clearPrintExport() {
     els.printExport.innerHTML = "";
     els.printExport.setAttribute("aria-hidden", "true");
+  }
+
+  // Keep already-open tabs current: re-check the deployed version when the tab
+  // is refocused/reopened (common on mobile) and on a slow timer, then refresh
+  // when the user is not in the middle of writing.
+  function watchForUpdates() {
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        checkForUpdate();
+      }
+    });
+    window.addEventListener("focus", checkForUpdate);
+    window.setInterval(checkForUpdate, 15 * 60 * 1000);
+    window.setTimeout(checkForUpdate, 8000);
+  }
+
+  async function checkForUpdate() {
+    if (state.updatePending) {
+      return;
+    }
+    try {
+      const response = await fetch(`version.json?ts=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) {
+        return;
+      }
+      const data = await response.json();
+      const latest = data && typeof data.version === "string" ? data.version : "";
+      if (!latest || latest === APP_VERSION) {
+        return;
+      }
+      // Reload at most once per detected version per tab, so a mismatched
+      // version file can never trap the page in a reload loop.
+      if (sessionStorage.getItem(UPDATE_RELOAD_KEY) === latest) {
+        return;
+      }
+      sessionStorage.setItem(UPDATE_RELOAD_KEY, latest);
+      state.updatePending = true;
+      applyUpdateWhenSafe();
+    } catch (error) {
+      // Offline or no version file: keep running the current version.
+    }
+  }
+
+  function applyUpdateWhenSafe() {
+    if (isSafeToReload()) {
+      window.location.reload();
+      return;
+    }
+    showToast("A new version is ready. It will refresh when you pause.");
+    const tryReload = () => {
+      if (isSafeToReload()) {
+        window.location.reload();
+      }
+    };
+    document.addEventListener("visibilitychange", tryReload);
+    els.noteTitle.addEventListener("blur", () => window.setTimeout(tryReload, 1500));
+    els.noteText.addEventListener("blur", () => window.setTimeout(tryReload, 1500));
+  }
+
+  function isSafeToReload() {
+    const editing = document.activeElement === els.noteTitle || document.activeElement === els.noteText;
+    return document.hidden || (!editing && !state.autoSaveTimer);
   }
 
   function formatCount(count, label) {
