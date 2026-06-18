@@ -1,4 +1,4 @@
 window.DIARY_SUPABASE_CONFIG = {
-  url: "YOUR_SUPABASE_URL",
-  anonKey: "YOUR_SUPABASE_ANON_KEY"
+  url: "https://ixjkaxqifwvvaqtlmydv.supabase.co",
+  anonKey: "sb_publishable_oFtwCOd_ojfV1X_0572Gsg_w7FKG6EC"
 };
