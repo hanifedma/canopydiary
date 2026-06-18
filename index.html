@@ -29,7 +29,7 @@
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <link rel="manifest" href="site.webmanifest" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260618" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -147,7 +147,13 @@
                   <button id="uploadTrigger" class="icon-button" type="button" aria-label="Upload pictures" title="Upload pictures">
                     <i data-lucide="image-plus"></i>
                   </button>
-                  <input id="photoInput" class="hidden" type="file" accept="image/*" multiple />
+                  <input
+                    id="photoInput"
+                    class="hidden"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+                    multiple
+                  />
                 </div>
                 <div id="dailyPhotos" class="photo-row"></div>
               </section>
@@ -370,8 +376,7 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-    <script src="firebase-config.js" defer></script>
-    <script src="app.js" defer></script>
+    <script src="supabase-config.js?v=20260618" defer></script>
+    <script src="app.js?v=20260618" defer></script>
   </body>
 </html>
